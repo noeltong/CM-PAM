@@ -15,13 +15,18 @@ from cm.script_util import (
 )
 from cm.train_util import TrainLoop
 import torch.distributed as dist
+import pathlib
 
 
 def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+    work_dir = pathlib.Path("/data/pam_cm_workspace").joinpath(
+        args.dataset, "consistency", args.training_mode
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
+    logger.configure(dir=str(work_dir), format_strs=["stdout", "log", "json", "csv"])
 
     logger.log("creating model and diffusion...")
     model, diffusion = create_model_and_diffusion(

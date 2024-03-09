@@ -162,8 +162,8 @@ class TrainLoop:
 
     def run_loop(self):
         while not self.lr_anneal_steps or self.step < self.lr_anneal_steps:
-            batch, cond = next(self.data)
-            self.run_step(batch, cond)
+            batch = next(self.data)
+            self.run_step(batch)
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
             if self.step % self.save_interval == 0:
@@ -175,8 +175,8 @@ class TrainLoop:
         if (self.step - 1) % self.save_interval != 0:
             self.save()
 
-    def run_step(self, batch, cond):
-        self.forward_backward(batch, cond)
+    def run_step(self, batch):
+        self.forward_backward(batch)
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
             self.step += 1
@@ -184,14 +184,10 @@ class TrainLoop:
         self._anneal_lr()
         self.log_step()
 
-    def forward_backward(self, batch, cond):
+    def forward_backward(self, batch):
         self.mp_trainer.zero_grad()
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i : i + self.microbatch].to(dist_util.dev())
-            micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
-                for k, v in cond.items()
-            }
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
@@ -199,8 +195,7 @@ class TrainLoop:
                 self.diffusion.training_losses,
                 self.ddp_model,
                 micro,
-                t,
-                model_kwargs=micro_cond,
+                t
             )
 
             if last_batch or not self.use_ddp:
@@ -363,8 +358,8 @@ class CMTrainLoop(TrainLoop):
             or self.step < self.lr_anneal_steps
             or self.global_step < self.total_training_steps
         ):
-            batch, cond = next(self.data)
-            self.run_step(batch, cond)
+            batch = next(self.data)
+            self.run_step(batch)
             saved = False
             if (
                 self.global_step
@@ -385,8 +380,8 @@ class CMTrainLoop(TrainLoop):
         if not saved:
             self.save()
 
-    def run_step(self, batch, cond):
-        self.forward_backward(batch, cond)
+    def run_step(self, batch):
+        self.forward_backward(batch)
         took_step = self.mp_trainer.optimize(self.opt)
         if took_step:
             self._update_ema()
@@ -441,14 +436,10 @@ class CMTrainLoop(TrainLoop):
                 self.teacher_model.eval()
                 self.step = 0
 
-    def forward_backward(self, batch, cond):
+    def forward_backward(self, batch):
         self.mp_trainer.zero_grad()
         for i in range(0, batch.shape[0], self.microbatch):
             micro = batch[i : i + self.microbatch].to(dist_util.dev())
-            micro_cond = {
-                k: v[i : i + self.microbatch].to(dist_util.dev())
-                for k, v in cond.items()
-            }
             last_batch = (i + self.microbatch) >= batch.shape[0]
             t, weights = self.schedule_sampler.sample(micro.shape[0], dist_util.dev())
 
@@ -462,7 +453,6 @@ class CMTrainLoop(TrainLoop):
                         num_scales,
                         target_model=self.teacher_model,
                         target_diffusion=self.teacher_diffusion,
-                        model_kwargs=micro_cond,
                     )
                 else:
                     compute_losses = functools.partial(
@@ -472,7 +462,6 @@ class CMTrainLoop(TrainLoop):
                         num_scales,
                         target_model=self.target_model,
                         target_diffusion=self.diffusion,
-                        model_kwargs=micro_cond,
                     )
             elif self.training_mode == "consistency_distillation":
                 compute_losses = functools.partial(
@@ -483,7 +472,6 @@ class CMTrainLoop(TrainLoop):
                     target_model=self.target_model,
                     teacher_model=self.teacher_model,
                     teacher_diffusion=self.teacher_diffusion,
-                    model_kwargs=micro_cond,
                 )
             elif self.training_mode == "consistency_training":
                 compute_losses = functools.partial(
@@ -492,7 +480,6 @@ class CMTrainLoop(TrainLoop):
                     micro,
                     num_scales,
                     target_model=self.target_model,
-                    model_kwargs=micro_cond,
                 )
             else:
                 raise ValueError(f"Unknown training mode {self.training_mode}")

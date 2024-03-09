@@ -77,9 +77,7 @@ class KarrasDenoiser:
         c_in = 1 / (sigma**2 + self.sigma_data**2) ** 0.5
         return c_skip, c_out, c_in
 
-    def training_losses(self, model, x_start, sigmas, model_kwargs=None, noise=None):
-        if model_kwargs is None:
-            model_kwargs = {}
+    def training_losses(self, model, x_start, sigmas, noise=None):
         if noise is None:
             noise = th.randn_like(x_start)
 
@@ -87,7 +85,7 @@ class KarrasDenoiser:
 
         dims = x_start.ndim
         x_t = x_start + noise * append_dims(sigmas, dims)
-        model_output, denoised = self.denoise(model, x_t, sigmas, **model_kwargs)
+        model_output, denoised = self.denoise(model, x_t, sigmas)
 
         snrs = self.get_snr(sigmas)
         weights = append_dims(
@@ -108,27 +106,24 @@ class KarrasDenoiser:
         model,
         x_start,
         num_scales,
-        model_kwargs=None,
         target_model=None,
         teacher_model=None,
         teacher_diffusion=None,
         noise=None,
     ):
-        if model_kwargs is None:
-            model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
 
         dims = x_start.ndim
 
         def denoise_fn(x, t):
-            return self.denoise(model, x, t, **model_kwargs)[1]
+            return self.denoise(model, x, t)[1]
 
         if target_model:
 
             @th.no_grad()
             def target_denoise_fn(x, t):
-                return self.denoise(target_model, x, t, **model_kwargs)[1]
+                return self.denoise(target_model, x, t)[1]
 
         else:
             raise NotImplementedError("Must have a target model")
@@ -137,7 +132,7 @@ class KarrasDenoiser:
 
             @th.no_grad()
             def teacher_denoise_fn(x, t):
-                return teacher_diffusion.denoise(teacher_model, x, t, **model_kwargs)[1]
+                return teacher_diffusion.denoise(teacher_model, x, t)[1]
 
         @th.no_grad()
         def heun_solver(samples, t, next_t, x0):
@@ -216,6 +211,10 @@ class KarrasDenoiser:
             )
             diffs = (distiller - distiller_target) ** 2
             loss = mean_flat(diffs) * weights
+        elif self.loss_norm == 'huber':
+            eps = 1e-6
+            diffs = th.sqrt((distiller - distiller_target) ** 2 + eps ** 2) - eps
+            loss = mean_flat(diffs) * weights
         elif self.loss_norm == "lpips":
             if x_start.shape[-1] < 256:
                 distiller = F.interpolate(distiller, size=224, mode="bilinear")
@@ -243,24 +242,21 @@ class KarrasDenoiser:
         model,
         x_start,
         num_scales,
-        model_kwargs=None,
         teacher_model=None,
         teacher_diffusion=None,
         noise=None,
     ):
-        if model_kwargs is None:
-            model_kwargs = {}
         if noise is None:
             noise = th.randn_like(x_start)
 
         dims = x_start.ndim
 
         def denoise_fn(x, t):
-            return self.denoise(model, x, t, **model_kwargs)[1]
+            return self.denoise(model, x, t)[1]
 
         @th.no_grad()
         def teacher_denoise_fn(x, t):
-            return teacher_diffusion.denoise(teacher_model, x, t, **model_kwargs)[1]
+            return teacher_diffusion.denoise(teacher_model, x, t)[1]
 
         @th.no_grad()
         def euler_solver(samples, t, next_t):
@@ -331,7 +327,7 @@ class KarrasDenoiser:
 
         return terms
 
-    def denoise(self, model, x_t, sigmas, **model_kwargs):
+    def denoise(self, model, x_t, sigmas):
         import torch.distributed as dist
 
         if not self.distillation:
@@ -344,7 +340,7 @@ class KarrasDenoiser:
                 for x in self.get_scalings_for_boundary_condition(sigmas)
             ]
         rescaled_t = 1000 * 0.25 * th.log(sigmas + 1e-44)
-        model_output = model(c_in * x_t, rescaled_t, **model_kwargs)
+        model_output = model(c_in * x_t, rescaled_t)
         denoised = c_out * model_output + c_skip * x_t
         return model_output, denoised
 
@@ -357,7 +353,6 @@ def karras_sample(
     clip_denoised=True,
     progress=False,
     callback=None,
-    model_kwargs=None,
     device=None,
     sigma_min=0.002,
     sigma_max=80,  # higher for highres?
@@ -402,7 +397,7 @@ def karras_sample(
         sampler_args = {}
 
     def denoiser(x_t, sigma):
-        _, denoised = diffusion.denoise(model, x_t, sigma, **model_kwargs)
+        _, denoised = diffusion.denoise(model, x_t, sigma)
         if clip_denoised:
             denoised = denoised.clamp(-1, 1)
         return denoised

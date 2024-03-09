@@ -18,13 +18,18 @@ from cm.script_util import (
 from cm.train_util import CMTrainLoop
 import torch.distributed as dist
 import copy
+import pathlib
 
 
 def main():
     args = create_argparser().parse_args()
 
     dist_util.setup_dist()
-    logger.configure()
+    work_dir = pathlib.Path("/data/pam_cm_workspace").joinpath(
+        args.dataset, "consistency", args.training_mode
+    )
+    work_dir.mkdir(parents=True, exist_ok=True)
+    logger.configure(dir=str(work_dir), format_strs=["stdout", "log", "json", "csv"])
 
     logger.log("creating model and diffusion...")
     ema_scale_fn = create_ema_and_scales_fn(
@@ -66,16 +71,14 @@ def main():
         batch_size = args.batch_size
 
     data = load_data(
-        data_dir=args.data_dir,
+        dataset=args.dataset,
         batch_size=batch_size,
         image_size=args.image_size,
-        class_cond=args.class_cond,
     )
 
     if len(args.teacher_model_path) > 0:  # path to the teacher score model.
         logger.log(f"loading the teacher model from {args.teacher_model_path}")
         teacher_model_and_diffusion_kwargs = copy.deepcopy(model_and_diffusion_kwargs)
-        teacher_model_and_diffusion_kwargs["dropout"] = args.teacher_dropout
         teacher_model_and_diffusion_kwargs["distillation"] = False
         teacher_model, teacher_diffusion = create_model_and_diffusion(
             **teacher_model_and_diffusion_kwargs,
@@ -159,6 +162,7 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
+        dataset='mice'
     )
     defaults.update(model_and_diffusion_defaults())
     defaults.update(cm_train_defaults())
