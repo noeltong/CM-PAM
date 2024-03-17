@@ -10,6 +10,7 @@ from mpi4py import MPI
 import numpy as np
 from torch.utils.data import DataLoader, Dataset
 from PIL import Image
+from tqdm import tqdm
 
 
 def min_max_scaler(x):
@@ -76,7 +77,7 @@ class PAMBrainDataset(torch.utils.data.Dataset):
         self.num_channels = 1
         self.local_paths = all_paths[shard:][::num_shards]
         self.local_images = [
-            np.array(Image.open(x)) for x in self.local_paths
+            np.array(Image.open(x)) for x in tqdm(self.local_paths)
         ]
         self.gt = []
 
