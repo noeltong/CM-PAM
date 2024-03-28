@@ -14,10 +14,13 @@ from tqdm import tqdm
 
 
 def min_max_scaler(x):
-    x = x - x.min()
-    x = x / x.max()
+    if x.min() == 0:
+        return torch.zeros_like(x)
+    else:
+        x = x - x.min()
+        x = x / x.max()
 
-    return x
+        return x
 
 
 def load_data(
@@ -52,7 +55,7 @@ def load_data(
         )
     elif dataset == 'brain':
         path = '/data/dataset/PAM/Brain'
-        all_files = list(glob(os.path.join(path, "train", "*.tif")))
+        all_files = list(glob(os.path.join(path, "train", "*.jpeg")))
         dataset = PAMBrainDataset(
             image_size,
             all_files,
@@ -77,7 +80,7 @@ class PAMBrainDataset(torch.utils.data.Dataset):
         self.num_channels = 1
         self.local_paths = all_paths[shard:][::num_shards]
         self.local_images = [
-            np.array(Image.open(x)) for x in tqdm(self.local_paths)
+            cv2.imread(x, cv2.IMREAD_GRAYSCALE) for x in tqdm(self.local_paths)
         ]
         self.gt = []
 

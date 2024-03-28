@@ -23,7 +23,7 @@ def main():
 
     dist_util.setup_dist()
     work_dir = pathlib.Path("/data/pam_cm_workspace").joinpath(
-        args.dataset, "consistency", args.training_mode
+        args.dataset, "edm"
     )
     work_dir.mkdir(parents=True, exist_ok=True)
     logger.configure(dir=str(work_dir), format_strs=["stdout", "log", "json", "csv"])
@@ -46,10 +46,9 @@ def main():
         batch_size = args.batch_size
 
     data = load_data(
-        data_dir=args.data_dir,
+        dataset=args.dataset,
         batch_size=batch_size,
         image_size=args.image_size,
-        class_cond=args.class_cond,
     )
 
     logger.log("creating data loader...")
@@ -90,6 +89,7 @@ def create_argparser():
         resume_checkpoint="",
         use_fp16=False,
         fp16_scale_growth=1e-3,
+        dataset="mice"
     )
     defaults.update(model_and_diffusion_defaults())
     parser = argparse.ArgumentParser()
